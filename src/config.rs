@@ -533,8 +533,15 @@ impl Config2 {
         return CONFIG2.read().unwrap().clone();
     }
 
-    pub fn set(cfg: Config2) -> bool {
+    pub fn set(mut cfg: Config2) -> bool {
         let mut lock = CONFIG2.write().unwrap();
+        // 2FA is security state and is changed only through the dedicated single-key path.
+        // Generic Config2 synchronization must never add, replace, or remove it.
+        if let Some(value) = lock.options.get("2fa").cloned() {
+            cfg.options.insert("2fa".to_owned(), value);
+        } else {
+            cfg.options.remove("2fa");
+        }
         if *lock == cfg {
             return false;
         }
@@ -1232,6 +1239,12 @@ impl Config {
     pub fn set_options(mut v: HashMap<String, String>) {
         Self::purify_options(&mut v);
         let mut config = CONFIG2.write().unwrap();
+        // Full-map option writes are not authorized to modify 2FA security state.
+        if let Some(value) = config.options.get("2fa").cloned() {
+            v.insert("2fa".to_owned(), value);
+        } else {
+            v.remove("2fa");
+        }
         if config.options == v {
             return;
         }
@@ -2362,7 +2375,7 @@ impl UserDefaultConfig {
             #[cfg(any(target_os = "android", target_os = "ios"))]
             keys::OPTION_VIEW_STYLE => self.get_string(key, "adaptive", vec!["original"]),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            keys::OPTION_VIEW_STYLE => self.get_string(key, "original", vec!["adaptive"]),
+            keys::OPTION_VIEW_STYLE => self.get_string(key, "adaptive", vec!["original"]),
             keys::OPTION_SCROLL_STYLE => {
                 self.get_string(key, "scrollauto", vec!["scrolledge", "scrollbar"])
             }

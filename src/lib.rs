@@ -432,12 +432,15 @@ pub fn init_log(_is_async: bool, _name: &str) -> Option<flexi_logger::LoggerHand
         // webrtc-rs reports the racing design's normal outcome at warn: cancelling the transport
         // that lost closes every gathered candidate one line at a time, and trickle means the
         // agent always checks before it holds a pair. Both read as faults beside a connection
-        // that succeeded. agent_gather keeps its warn level - a STUN server it could not reach
-        // is the one upstream signal that explains a session which never connected.
+        // that succeeded. Every session also logged gathering on unusable interfaces, a STUN
+        // host without an IPv6 address, unknown-transaction discards, mux/SCTP teardown and
+        // data-channel detach notes, so those modules log errors only; whether WebRTC connected
+        // is in each session's route/direct_result report to the directory. (The crate is
+        // webrtc_sctp: the old "webrtc-sctp" filter never matched.)
         #[cfg(debug_assertions)]
         {
             use env_logger::*;
-            init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info,reqwest=warn,hyper_util=warn,rustls=warn,webrtc-sctp=warn,webrtc=warn,webrtc_ice::agent::agent_internal=error,webrtc::peer_connection=error"));
+            init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info,reqwest=warn,hyper_util=warn,rustls=warn,webrtc_sctp=error,webrtc=warn,webrtc::mux=error,webrtc::data_channel=error,webrtc_ice::agent::agent_internal=error,webrtc_ice::agent::agent_selector=error,webrtc_ice::agent::agent_gather=error,webrtc::peer_connection=error"));
         }
         #[cfg(not(debug_assertions))]
         {
@@ -452,7 +455,7 @@ pub fn init_log(_is_async: bool, _name: &str) -> Option<flexi_logger::LoggerHand
                 path.push(_name);
             }
             use flexi_logger::*;
-            if let Ok(x) = Logger::try_with_env_or_str("debug,reqwest=warn,hyper_util=warn,rustls=warn,webrtc-sctp=warn,webrtc=warn,webrtc_ice::agent::agent_internal=error,webrtc::peer_connection=error") {
+            if let Ok(x) = Logger::try_with_env_or_str("debug,reqwest=warn,hyper_util=warn,rustls=warn,webrtc_sctp=error,webrtc=warn,webrtc::mux=error,webrtc::data_channel=error,webrtc_ice::agent::agent_internal=error,webrtc_ice::agent::agent_selector=error,webrtc_ice::agent::agent_gather=error,webrtc::peer_connection=error") {
                 logger_holder = x
                     .log_to_file(FileSpec::default().directory(path))
                     .write_mode(if _is_async {

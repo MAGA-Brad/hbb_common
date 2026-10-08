@@ -422,11 +422,23 @@ pub fn check_ws(endpoint: &str) -> String {
         (format!("{}{}", endpoint_host, domain_path), true)
     };
     let protocol = if is_domain {
-        let api_server = Config::get_option("api-server");
-        if api_server.starts_with("https") {
+        // A managed client's rendezvous/relay servers are always ours, and
+        // always HTTPS - never fall back to plaintext ws:// for these
+        // builds. Relying solely on the generic `api-server` option (which
+        // this fork doesn't populate for every managed client, e.g. any
+        // already-enrolled before this fix shipped) left websocket mode
+        // silently connecting to plain :80 - which a reverse proxy with automatic
+        // HTTPS just redirects, not a valid websocket handshake - so it always
+        // failed instead of falling back or erroring loudly.
+        if option_env!("RUSTDESK_MANAGED_DIRECTORY_BASE").is_some() {
             "wss"
         } else {
-            "ws"
+            let api_server = Config::get_option("api-server");
+            if api_server.starts_with("https") {
+                "wss"
+            } else {
+                "ws"
+            }
         }
     } else {
         "ws"
