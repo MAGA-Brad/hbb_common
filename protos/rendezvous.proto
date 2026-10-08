@@ -247,6 +247,17 @@ message KeyExchange {
 message KxParams {
   bytes pk = 1;
   uint32 version = 2;
+  // Managed builds: what else the server accepts on this connection (bit 1 = DeviceAuth). Signed
+  // with the rest of KxParams, so it can't be removed on the way.
+  uint32 managed_capabilities = 101;
+}
+
+// Device passports: sent by a managed device right after the key exchange, when the server's KxParams
+// offer it: the device's passport (rdcp1 token) and its identity key's signature over this
+// connection's key exchange, so the connection is proven to belong to that device.
+message DeviceAuth {
+  string passport = 1;
+  bytes signature = 2;
 }
 
 message HealthCheck {
@@ -305,5 +316,6 @@ message RendezvousMessage {
     HttpProxyRequest http_proxy_request = 27;
     HttpProxyResponse http_proxy_response = 28;
     IceCandidate ice_candidate = 29;
+    DeviceAuth device_auth = 101;
   }
 }
