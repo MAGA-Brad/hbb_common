@@ -39,6 +39,8 @@ use tungstenite::client::IntoClientRequest;
 /// transport back exactly where it started rather than above it.
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 64 << 20;
 const DEFAULT_MAX_FRAME_SIZE: usize = 16 << 20;
+/// A failing connect logs once, then a count at most this often.
+const FAILURE_LOG_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
 
 // macOS/iOS Native TLS may wait for a response without flushing the proxy tunnel's write buffer.
 struct FlushBeforeRead(DynTcpStream);
@@ -242,7 +244,10 @@ impl WsFramedStream {
                     .await
                 }
                 (TlsType::Rustls, false, Some(_)) => {
-                    log::warn!(
+                    // Without a network this runs on every reconnect attempt.
+                    crate::throttled_log!(
+                        FAILURE_LOG_INTERVAL,
+                        warn,
                         "WebSocket connection with rustls-tls failed, try native-tls: {}, {:?}",
                         url,
                         e
@@ -278,7 +283,9 @@ impl WsFramedStream {
                     .await
                 }
                 _ => {
-                    log::error!(
+                    crate::throttled_log!(
+                        FAILURE_LOG_INTERVAL,
+                        error,
                         "WebSocket connection failed with tls_type {:?}: {}, {:?}",
                         tls_type,
                         url,
@@ -521,11 +528,23 @@ pub fn check_ws(endpoint: &str) -> String {
         (format!("{}{}{}", endpoint_host, port, domain_path), true)
     };
     let protocol = if is_domain {
-        let api_server = Config::get_option("api-server");
-        if api_server.starts_with("https") {
+        // A managed client's rendezvous/relay servers are always ours, and
+        // always HTTPS - never fall back to plaintext ws:// for these
+        // builds. Relying solely on the generic `api-server` option (which
+        // this fork doesn't populate for every managed client, e.g. any
+        // already-enrolled before this fix shipped) left websocket mode
+        // silently connecting to plain :80 - which a reverse proxy with automatic
+        // HTTPS just redirects, not a valid websocket handshake - so it always
+        // failed instead of falling back or erroring loudly.
+        if option_env!("RUSTDESK_MANAGED_DIRECTORY_BASE").is_some() {
             "wss"
         } else {
-            "ws"
+            let api_server = Config::get_option("api-server");
+            if api_server.starts_with("https") {
+                "wss"
+            } else {
+                "ws"
+            }
         }
     } else {
         "ws"

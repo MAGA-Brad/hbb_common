@@ -173,6 +173,9 @@ message RequestRelay {
   ControlPermissions control_permissions = 9;
   ControlledContext controlled_context = 10;
   string switch_code = 11;
+  // Managed builds (relay tickets): hbbs's ticket for hbbr. The controlled side gets it in the RequestRelay
+  // hbbs forwards; both sides copy theirs into the RequestRelay they send hbbr.
+  string relay_ticket = 101;
 }
 
 message RelayResponse {
@@ -189,6 +192,9 @@ message RelayResponse {
   bytes socket_addr_v6 = 10;
   int32 upnp_port = 11;
   string webrtc_sdp_answer = 12;
+  // Managed builds (relay tickets): hbbs's ticket for hbbr, to the controller with the relay, and back to a
+  // controlled side that started the relay itself (see RequestRelay.relay_ticket).
+  string relay_ticket = 101;
 }
 
 message SoftwareUpdate { string url = 1; }
@@ -248,6 +254,17 @@ message KeyExchange {
 message KxParams {
   bytes pk = 1;
   uint32 version = 2;
+  // Managed builds: what else the server accepts on this connection (bit 1 = DeviceAuth). Signed with the
+  // rest of KxParams, so it can't be removed on the way.
+  uint32 managed_capabilities = 101;
+}
+
+// Device passports: sent by a managed device right after the key exchange, when the server's KxParams
+// offer it: the device's passport (rdcp1 token) and its identity key's signature over this
+// connection's key exchange, so the connection is proven to belong to that device.
+message DeviceAuth {
+  string passport = 1;
+  bytes signature = 2;
 }
 
 message HealthCheck {
@@ -306,5 +323,6 @@ message RendezvousMessage {
     HttpProxyRequest http_proxy_request = 27;
     HttpProxyResponse http_proxy_response = 28;
     IceCandidate ice_candidate = 29;
+    DeviceAuth device_auth = 101;
   }
 }

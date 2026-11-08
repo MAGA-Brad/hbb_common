@@ -3,7 +3,7 @@
 //! # Bumping the webrtc crate
 //!
 //! This module depends on webrtc-rs internals its public API does not promise. Re-verify each
-//! against the new sources (last checked: webrtc 0.13, -data 0.11, -sctp 0.12), then run
+//! against the new sources (last checked: webrtc 0.17.3, -data 0.17.3, -sctp 0.17.3), then run
 //! `cargo test --features webrtc webrtc::tests`.
 //!
 //! - `DataChannel::write` parks on a full PendingQueue instead of buffering without bound.
@@ -13,8 +13,8 @@
 //! - `on_*` handlers live in the pc: one holding a strong `Arc<RTCPeerConnection>` leaks it.
 //! - `close()` latches `is_closed` before its first await, so a cancelled close is unretryable.
 //! - `Disconnected` is transient; only `Failed`/`Closed` are terminal.
-//! - `RTCIceCandidatePair`'s `Display` layout — `is_relayed()` parses it because 0.13 keeps the
-//!   candidates private. 0.17+ exposes them; switch and delete the parse.
+//! - SCTP max message size: 0.17 takes the remote's `a=max-message-size` (65536 when absent, as
+//!   from a 0.13 peer) and advertises its own 65536, so the bound above holds either way.
 
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
@@ -1078,13 +1078,9 @@ impl WebRTCStream {
 
         // Not the stats report's `nominated` flag: webrtc-ice never clears it per checklist entry,
         // so after a pair switch several entries carry it and map order decides the answer.
-        // 0.13 keeps the candidates private, so read the types out of `Display` by position.
-        let relay = RTCIceCandidateType::Relay.to_string();
         Some(
-            pair.to_string()
-                .split(" <-> ")
-                .filter_map(|side| side.split_whitespace().nth(2))
-                .any(|typ| typ == relay),
+            pair.local.typ == RTCIceCandidateType::Relay
+                || pair.remote.typ == RTCIceCandidateType::Relay,
         )
     }
 
@@ -1094,12 +1090,9 @@ impl WebRTCStream {
     pub async fn is_remote_ipv6(&self) -> Option<bool> {
         let dtls = self.pc.sctp().transport();
         let pair = dtls.ice_transport().get_selected_candidate_pair().await?;
-        // Same `Display` parse as `is_relayed`, one token over: a side renders as
-        // `(remote) <protocol> <typ> <address>:<port>`, and `protocol` is only udp/tcp, so the
-        // family has to come from the address — an IPv6 literal is the only one with two colons.
-        let pair = pair.to_string();
-        let remote = pair.split(" <-> ").nth(1)?;
-        Some(remote.split_whitespace().nth(3)?.matches(':').count() > 1)
+        // `protocol` is only udp/tcp, so the family has to come from the address — an IPv6
+        // literal is the only one with a colon (an mDNS name or IPv4 address has none).
+        Some(pair.remote.address.contains(':'))
     }
 
     #[inline]
